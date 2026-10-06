@@ -7,24 +7,40 @@ const roles = [
   { value: 'sewing_supervisor', label: 'Sewing Supervisor', initials: 'RS' },
 ]
 const emptyForm = { recipe_id: '', target_qty: '', fabric_roll_id: '', actual_fabric_yds: '' }
+const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+const apiUrl = (path) => `${API_URL}${path}`
 
 function App() {
   const [activeRole, setActiveRole] = useState(roles[0].value)
   const [recipes, setRecipes] = useState([])
   const [form, setForm] = useState(emptyForm)
   const [orders, setOrders] = useState([])
+  const [pending, setPending] = useState([])
+  const [selectedPendingId, setSelectedPendingId] = useState('')
+  const [queue, setQueue] = useState([])
+  const [counts, setCounts] = useState({})
+  const [rejectionNote, setRejectionNote] = useState('')
   const [message, setMessage] = useState(null)
   const [isSaving, setIsSaving] = useState(false)
   const role = roles.find((item) => item.value === activeRole)
   const selectedRecipe = recipes.find((item) => item.id === form.recipe_id)
+  const availableRecipes = recipes.filter((recipe) => recipe.recipe_components?.length)
   const targetQty = Number(form.target_qty)
+  const selectedOrder = pending.find((order) => order.id === selectedPendingId) || pending[0]
+  const selectedComponents = selectedOrder?.recipes?.recipe_components || []
 
   useEffect(() => {
-    fetch('/api/recipes')
-      .then((response) => response.json())
-      .then(setRecipes)
-      .catch(() => setMessage({ type: 'error', text: 'Could not load recipes. Complete the database setup before creating an order.' }))
+    fetch(apiUrl('/api/recipes')).then((response) => response.json()).then(setRecipes).catch(() => setMessage({ type: 'error', text: 'Could not load recipes. Complete the database setup first.' }))
   }, [])
+
+  useEffect(() => {
+    if (activeRole === 'cutting_verifier') {
+      fetch(apiUrl('/api/verification/pending'), { headers: { 'x-demo-role': activeRole } }).then((response) => response.json()).then((data) => { setPending(data); setSelectedPendingId(data[0]?.id || '') }).catch((error) => setMessage({ type: 'error', text: error.message }))
+    }
+    if (activeRole === 'sewing_supervisor') {
+      fetch(apiUrl('/api/sewing/queue'), { headers: { 'x-demo-role': activeRole } }).then((response) => response.json()).then(setQueue).catch((error) => setMessage({ type: 'error', text: error.message }))
+    }
+  }, [activeRole])
 
   function updateField(event) {
     setForm((current) => ({ ...current, [event.target.name]: event.target.value }))
@@ -38,45 +54,70 @@ function App() {
       return
     }
     setIsSaving(true)
-    setMessage(null)
     try {
-      const response = await fetch('/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-demo-role': activeRole },
-        body: JSON.stringify({ ...form, target_qty: targetQty, actual_fabric_yds: Number(form.actual_fabric_yds) }),
-      })
+      const response = await fetch(apiUrl('/api/orders'), { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-demo-role': activeRole }, body: JSON.stringify({ ...form, target_qty: targetQty, actual_fabric_yds: Number(form.actual_fabric_yds) }) })
       const data = await response.json()
       if (!response.ok) throw new Error(data.message || 'Order could not be created')
       setOrders((current) => [data, ...current])
       setForm(emptyForm)
       setMessage({ type: 'success', text: `${data.order_no} is ready for verification.` })
-    } catch (error) {
-      setMessage({ type: 'error', text: error.message })
-    } finally {
-      setIsSaving(false)
-    }
+    } catch (error) { setMessage({ type: 'error', text: error.message }) } finally { setIsSaving(false) }
+  }
+
+  function updateCount(componentId, value) {
+    setCounts((current) => ({ ...current, [componentId]: value }))
+  }
+
+  function itemStatus(component) {
+    const expected = Number(component.pieces_per_garment) * Number(selectedOrder?.target_qty)
+    const actual = Number(counts[component.id])
+    if (!Number.isInteger(actual) || actual < 0) return 'UNCHECKED'
+    return actual < expected ? 'RED' : actual > expected ? 'YELLOW' : 'GREEN'
+  }
+
+  async function submitDecision(decision) {
+    if (!selectedOrder) return
+    if (decision === 'REJECTED' && !rejectionNote.trim()) { setMessage({ type: 'error', text: 'A rejection reason is required.' }); return }
+    const items = selectedComponents.map((component) => ({ component_id: component.id, actual_qty: Number(counts[component.id]) }))
+    setIsSaving(true)
+    try {
+      const response = await fetch(apiUrl(`/api/verification/${selectedOrder.id}/decision`), { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-demo-role': activeRole }, body: JSON.stringify({ decision, rejection_note: rejectionNote, items }) })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Verification could not be recorded')
+      const remainingOrders = pending.filter((order) => order.id !== selectedOrder.id)
+      setPending(remainingOrders)
+      setSelectedPendingId(remainingOrders[0]?.id || '')
+      setCounts({})
+      setRejectionNote('')
+      setMessage({ type: 'success', text: `${selectedOrder.order_no} marked ${data.status.replaceAll('_', ' ').toLowerCase()}.` })
+    } catch (error) { setMessage({ type: 'error', text: error.message }) } finally { setIsSaving(false) }
+  }
+
+  async function startSewing(order) {
+    setIsSaving(true)
+    try {
+      const response = await fetch(apiUrl(`/api/sewing/${order.id}/start`), { method: 'POST', headers: { 'x-demo-role': activeRole } })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Could not start sewing')
+      setQueue((current) => current.filter((item) => item.id !== order.id))
+      setMessage({ type: 'success', text: `${order.order_no} released to sewing assembly.` })
+    } catch (error) { setMessage({ type: 'error', text: error.message }) } finally { setIsSaving(false) }
   }
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div className="brand"><span className="brand-mark">AF</span><span>ApparelFlow <small>ERP / CUTTING OPERATIONS</small></span></div>
-        <div className="role-switcher"><span>Demo identity</span>{roles.map((item) => <button className={item.value === activeRole ? 'role active' : 'role'} key={item.value} onClick={() => setActiveRole(item.value)}><b>{item.initials}</b>{item.label}</button>)}</div>
-      </header>
-      <section className="workspace-head"><div><p className="eyebrow">Production control</p><h1>Cutting order desk</h1><p className="lede">Prepare accurate production batches before they reach the quality checkpoint.</p></div><div className="status-chip"><span className="pulse" /> {role.label}<small>Authenticated demo session</small></div></section>
+      <header className="topbar"><div className="brand"><span className="brand-mark">AF</span><span>ApparelFlow <small>ERP / CUTTING OPERATIONS</small></span></div><div className="role-switcher"><span>Demo identity</span>{roles.map((item) => <button className={item.value === activeRole ? 'role active' : 'role'} key={item.value} onClick={() => setActiveRole(item.value)}><b>{item.initials}</b>{item.label}</button>)}</div></header>
+      <section className="workspace-head"><div><p className="eyebrow">Production control</p><h1>{activeRole === 'cutting_verifier' ? 'Verification station' : activeRole === 'sewing_supervisor' ? 'Sewing queue' : 'Cutting order desk'}</h1><p className="lede">{activeRole === 'cutting_verifier' ? 'Count every component before a batch is released to assembly.' : activeRole === 'sewing_supervisor' ? 'Release verified production batches to the assembly floor.' : 'Prepare accurate production batches before they reach the quality checkpoint.'}</p></div><div className="status-chip"><span className="pulse" /> {role.label}<small>Authenticated demo session</small></div></section>
       {message && <div className={`notice ${message.type}`} role="status">{message.text}</div>}
-      {activeRole === 'cutting_supervisor' ? <section className="content-grid">
-        <form className="panel order-form" onSubmit={submitOrder}><div className="panel-heading"><div><p className="eyebrow">New production batch</p><h2>Create cutting order</h2></div><span className="step">ORDER INTAKE</span></div>
-          <label>Production recipe<select name="recipe_id" value={form.recipe_id} onChange={updateField}><option value="">Select a recipe</option>{recipes.map((recipe) => <option value={recipe.id} key={recipe.id}>{recipe.recipe_code} · {recipe.name}</option>)}</select></label>
-          {selectedRecipe && <div className="recipe-summary"><div><strong>{selectedRecipe.name}</strong><span>{selectedRecipe.category} · {selectedRecipe.std_fabric_yards} yds / piece</span></div><span className="cap">{selectedRecipe.wastage_cap}% cap</span></div>}
-          <div className="field-row"><label>Target batch quantity<input name="target_qty" type="number" min="1" step="1" value={form.target_qty} onChange={updateField} placeholder="e.g. 50" /></label><label>Fabric roll ID<input name="fabric_roll_id" value={form.fabric_roll_id} onChange={updateField} placeholder="FAB-ROLL-882" /></label></div>
-          <label>Actual fabric used <span className="label-note">yards</span><input name="actual_fabric_yds" type="number" min="0.01" step="0.01" value={form.actual_fabric_yds} onChange={updateField} placeholder="e.g. 92.4" /></label>
-          <button className="primary-button" type="submit" disabled={isSaving}>{isSaving ? 'Creating order...' : 'Create order →'}</button>
-        </form>
-        <aside className="panel multiplier"><div className="panel-heading"><div><p className="eyebrow">Live multiplier</p><h2>Expected cut pieces</h2></div><span className="formula">QTY × PCS</span></div>{selectedRecipe && targetQty > 0 ? <div className="component-list">{selectedRecipe.recipe_components?.map((component) => <div className="component" key={component.id}><span>{component.component_name}</span><strong>{Number(component.pieces_per_garment) * targetQty}<small> pcs</small></strong><em>{component.pieces_per_garment} × {targetQty}</em></div>)}</div> : <div className="empty-state"><span className="empty-icon">×</span><p>Select a recipe and batch quantity to calculate the cut plan.</p></div>}</aside>
-      </section> : <section className="panel role-lock"><span className="lock-icon">{role.initials}</span><p className="eyebrow">{role.label} workspace</p><h2>Order creation is restricted</h2><p>This workspace is scoped to the Cutting Supervisor. Switch identity above to test the separated role boundary.</p></section>}
-      {orders.length > 0 && <section className="panel recent-orders"><div className="panel-heading"><div><p className="eyebrow">This session</p><h2>Created orders</h2></div><span className="order-count">{orders.length} batch{orders.length === 1 ? '' : 'es'}</span></div><div className="order-table">{orders.map((order) => <div className="order-row" key={order.id}><span className="order-id">{order.order_no}</span><span>{order.recipes?.name || 'Production batch'}</span><span>{order.target_qty} garments</span><span>{order.status.replaceAll('_', ' ')}</span><b>{order.component_counts?.reduce((total, item) => total + item.expected_qty, 0)} pieces</b></div>)}</div></section>}
-      <footer><span>APPARELFLOW CONTROL PLANE</span><span>SERVER-VALIDATED ORDER INTAKE</span></footer>
+
+      {activeRole === 'cutting_supervisor' && <section className="content-grid"><form className="panel order-form" onSubmit={submitOrder}><div className="panel-heading"><div><p className="eyebrow">New production batch</p><h2>Create cutting order</h2></div><span className="step">ORDER INTAKE</span></div><label>Production recipe<select name="recipe_id" value={form.recipe_id} onChange={updateField}><option value="">Select a recipe</option>{availableRecipes.map((recipe) => <option value={recipe.id} key={recipe.id}>{recipe.recipe_code} · {recipe.name}</option>)}</select></label>{selectedRecipe && <div className="recipe-summary"><div><strong>{selectedRecipe.name}</strong><span>{selectedRecipe.category} · {selectedRecipe.std_fabric_yards} yds / piece</span></div><span className="cap">{selectedRecipe.wastage_cap}% cap</span></div>}<div className="field-row"><label>Target batch quantity<input name="target_qty" type="number" min="1" step="1" value={form.target_qty} onChange={updateField} placeholder="e.g. 50" /></label><label>Fabric roll ID<input name="fabric_roll_id" value={form.fabric_roll_id} onChange={updateField} placeholder="FAB-ROLL-882" /></label></div><label>Actual fabric used <span className="label-note">yards</span><input name="actual_fabric_yds" type="number" min="0.01" step="0.01" value={form.actual_fabric_yds} onChange={updateField} placeholder="e.g. 92.4" /></label><button className="primary-button" type="submit" disabled={isSaving}>{isSaving ? 'Creating order...' : 'Create order →'}</button></form><aside className="panel multiplier"><div className="panel-heading"><div><p className="eyebrow">Live multiplier</p><h2>Expected cut pieces</h2></div><span className="formula">QTY × PCS</span></div>{selectedRecipe && targetQty > 0 ? <div className="component-list">{selectedRecipe.recipe_components?.map((component) => <div className="component" key={component.id}><span>{component.component_name}</span><strong>{Number(component.pieces_per_garment) * targetQty}<small> pcs</small></strong><em>{component.pieces_per_garment} × {targetQty}</em></div>)}</div> : <div className="empty-state"><span className="empty-icon">×</span><p>Select a recipe and batch quantity to calculate the cut plan.</p></div>}</aside></section>}
+
+      {activeRole === 'cutting_verifier' && <section className="panel verifier-panel"><div className="panel-heading"><div><p className="eyebrow">Quality checkpoint</p><h2>{selectedOrder ? selectedOrder.order_no : 'No pending batches'}</h2></div>{selectedOrder && <span className="order-count">{pending.length} pending · {selectedOrder.recipes.name}</span>}</div>{selectedOrder ? <><div className="pending-orders"><span className="pending-label">Pending batches</span>{pending.map((order) => <button className={order.id === selectedOrder.id ? 'pending-order active' : 'pending-order'} key={order.id} onClick={() => { setSelectedPendingId(order.id); setCounts({}); setRejectionNote('') }}><strong>{order.order_no}</strong><span>{order.recipes.name} · {order.target_qty} garments</span></button>)}</div><div className="verification-list">{selectedComponents.map((component) => <div className={`verification-row ${itemStatus(component).toLowerCase()}`} key={component.id}><div><strong>{component.component_name}</strong><span>Expected {Number(component.pieces_per_garment) * Number(selectedOrder.target_qty)} pieces</span></div><input aria-label={`Actual ${component.component_name}`} type="number" min="0" step="1" value={counts[component.id] ?? ''} onChange={(event) => updateCount(component.id, event.target.value)} placeholder="Actual count" /><b>{itemStatus(component)}</b></div>)}</div><label className="rejection-field">Rejection note <span className="label-note">required only when rejecting</span><textarea value={rejectionNote} onChange={(event) => setRejectionNote(event.target.value)} placeholder="Describe any shortage or defect..." /></label><div className="decision-actions"><button className="secondary-button reject" disabled={isSaving} onClick={() => submitDecision('REJECTED')}>Reject batch</button><button className="primary-button" disabled={isSaving || selectedComponents.some((component) => itemStatus(component) === 'RED' || itemStatus(component) === 'UNCHECKED')} onClick={() => submitDecision('APPROVED')}>Approve batch →</button></div></> : <div className="empty-state light"><span className="empty-icon">✓</span><p>All cutting batches have been reviewed.</p></div>}</section>}
+
+      {activeRole === 'sewing_supervisor' && <section className="panel queue-panel"><div className="panel-heading"><div><p className="eyebrow">Assembly release</p><h2>Verified sewing queue</h2></div><span className="order-count">{queue.length} ready</span></div>{queue.length ? <div className="queue-list">{queue.map((order) => <div className="queue-row" key={order.id}><div><strong>{order.order_no}</strong><span>{order.recipes?.name} · {order.target_qty} garments</span><small>Roll {order.fabric_roll_id} · {Number(order.actual_fabric_yds).toFixed(2)} yds used</small></div><button className="primary-button compact" disabled={isSaving} onClick={() => startSewing(order)}>Start sewing →</button></div>)}</div> : <div className="empty-state light"><span className="empty-icon">—</span><p>No verified batches are waiting for assembly.</p></div>}</section>}
+
+      {orders.length > 0 && activeRole === 'cutting_supervisor' && <section className="panel recent-orders"><div className="panel-heading"><div><p className="eyebrow">This session</p><h2>Created orders</h2></div><span className="order-count">{orders.length} batch{orders.length === 1 ? '' : 'es'}</span></div><div className="order-table">{orders.map((order) => <div className="order-row" key={order.id}><span className="order-id">{order.order_no}</span><span>{order.recipes?.name || 'Production batch'}</span><span>{order.target_qty} garments</span><span>{order.status.replaceAll('_', ' ')}</span><b>{order.component_counts?.reduce((total, item) => total + item.expected_qty, 0)} pieces</b></div>)}</div></section>}
+      <footer><span>APPARELFLOW CONTROL PLANE</span><span>SERVER-VALIDATED WORKFLOW</span></footer>
     </main>
   )
 }

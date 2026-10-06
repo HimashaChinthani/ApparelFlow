@@ -25,12 +25,28 @@ create table if not exists cutting_orders (
     id uuid primary key default gen_random_uuid(), order_no text not null unique, recipe_id uuid not null references recipes(id),
     target_qty integer not null check (target_qty > 0), fabric_roll_id text not null,
     actual_fabric_yds numeric(10, 2) not null check (actual_fabric_yds > 0), expected_fabric_yds numeric(10, 2) not null check (expected_fabric_yds > 0),
-    status text not null default 'PENDING_VERIFICATION' check (status in ('CUTTING_IN_PROGRESS', 'PENDING_VERIFICATION', 'REJECTED', 'VERIFIED')),
+    status text not null default 'PENDING_VERIFICATION' check (status in ('CUTTING_IN_PROGRESS', 'PENDING_VERIFICATION', 'REJECTED', 'VERIFIED', 'SEWING_IN_PROGRESS')),
     created_by uuid not null references users(id), created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 
 alter table public.cutting_orders
     add column if not exists expected_fabric_yds numeric(10, 2);
+
+alter table public.cutting_orders drop constraint if exists cutting_orders_status_check;
+alter table public.cutting_orders add constraint cutting_orders_status_check
+    check (status in ('CUTTING_IN_PROGRESS', 'PENDING_VERIFICATION', 'REJECTED', 'VERIFIED', 'SEWING_IN_PROGRESS'));
+
+create table if not exists verification_items (
+    id uuid primary key default gen_random_uuid(), order_id uuid not null references cutting_orders(id) on delete cascade,
+    component_id uuid not null references recipe_components(id), expected_qty integer not null,
+    actual_qty integer not null, status text not null check (status in ('GREEN', 'YELLOW', 'RED')), created_at timestamptz not null default now()
+);
+
+create table if not exists verification_logs (
+    id uuid primary key default gen_random_uuid(), order_id uuid not null references cutting_orders(id) on delete cascade,
+    verifier_id uuid not null references users(id), decision text not null check (decision in ('APPROVED', 'REJECTED')),
+    rejection_note text, wastage_pct numeric(10, 2) not null, created_at timestamptz not null default now()
+);
 
 insert into users (id, email, password_hash, role, full_name)
 select seed.id, seed.email, seed.password_hash, seed.role::user_role, seed.full_name
@@ -69,7 +85,7 @@ where not exists (
 -- Replace these policies with authenticated, role-aware policies before production.
 grant usage on schema public to anon, authenticated;
 grant select on public.recipes, public.recipe_components to anon, authenticated;
-grant select, insert, update on public.cutting_orders to anon, authenticated;
+grant select, insert, update on public.cutting_orders, public.verification_items, public.verification_logs to anon, authenticated;
 grant select on public.users to anon, authenticated;
 grant usage, select on all sequences in schema public to anon, authenticated;
 
@@ -77,6 +93,8 @@ alter table public.recipes enable row level security;
 alter table public.recipe_components enable row level security;
 alter table public.cutting_orders enable row level security;
 alter table public.users enable row level security;
+alter table public.verification_items enable row level security;
+alter table public.verification_logs enable row level security;
 
 drop policy if exists "demo read recipes" on public.recipes;
 create policy "demo read recipes" on public.recipes
@@ -93,3 +111,19 @@ create policy "demo read users" on public.users
 drop policy if exists "demo read and create orders" on public.cutting_orders;
 create policy "demo read and create orders" on public.cutting_orders
     for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists "demo verification access" on public.verification_items;
+create policy "demo verification access" on public.verification_items
+    for all to anon, authenticated using (true) with check (true);
+
+drop policy if exists "demo insert verification items" on public.verification_items;
+create policy "demo insert verification items" on public.verification_items
+    for insert to anon, authenticated with check (true);
+
+drop policy if exists "demo verification log access" on public.verification_logs;
+create policy "demo verification log access" on public.verification_logs
+    for select to anon, authenticated using (true);
+
+drop policy if exists "demo insert verification logs" on public.verification_logs;
+create policy "demo insert verification logs" on public.verification_logs
+    for insert to anon, authenticated with check (true);

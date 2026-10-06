@@ -5,14 +5,19 @@ const cors = require("cors");
 
 const recipeRoutes = require("./routes/recipeRoutes");
 const orderRoutes = require("./routes/orderRoutes");
+const verificationRoutes = require("./routes/verificationRoutes");
+const sewingRoutes = require("./routes/sewingRoutes");
 
 const app = express();
 
-app.use(cors());
+const allowedOrigins = process.env.CLIENT_URL ? process.env.CLIENT_URL.split(",").map((origin) => origin.trim()) : true;
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 app.use("/api/recipes", recipeRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/verification", verificationRoutes);
+app.use("/api/sewing", sewingRoutes);
 
 app.get("/", (req, res) => {
     res.json({
@@ -22,9 +27,11 @@ app.get("/", (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+    });
+}
 const supabase = require("./config/supabase");
 
 app.get("/api/test-supabase", async (req, res) => {
@@ -53,4 +60,6 @@ app.get("/api/test-supabase", async (req, res) => {
         });
     }
 });
+
+module.exports = app;
 
