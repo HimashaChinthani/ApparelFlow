@@ -20,6 +20,16 @@ const getSewingQueue = async (db = supabase) => {
     return data;
 };
 
+const getActiveSewing = async () => {
+    const { data, error } = await supabase
+        .from("cutting_orders")
+        .select("id, order_no, target_qty, fabric_roll_id, actual_fabric_yds, expected_fabric_yds, status, updated_at, recipes(recipe_code, name), verification_items(component_id, expected_qty, actual_qty, status), verification_logs(verifier_id, decision, rejection_note, wastage_pct, created_at)")
+        .eq("status", "SEWING_IN_PROGRESS")
+        .order("updated_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    return data;
+};
+
 const validateItems = (order, items) => {
     const components = order.recipes?.recipe_components || [];
     if (!Array.isArray(items) || items.length !== components.length) {
@@ -102,4 +112,4 @@ const startSewing = async (orderId) => {
     return data;
 };
 
-module.exports = { getPendingOrders, getSewingQueue, recordDecision, startSewing, validateItems, canApprove, hasRejectionReason };
+module.exports = { getPendingOrders, getSewingQueue, getActiveSewing, recordDecision, startSewing, validateItems, canApprove, hasRejectionReason };

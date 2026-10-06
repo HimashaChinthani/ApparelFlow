@@ -15,8 +15,8 @@ The database seed also contained a stale `role::user_role` cast even though the 
 
 ## 3. Human refactoring
 
-The API now provides a role-scoped order history endpoint and the client hydrates it whenever the cutting supervisor view is opened. Verification validation rejects duplicate IDs, non-integer counts, missing components, and shortages on approval. The sewing queue response includes immutable verification items and audit information so the assembly view can inspect the handoff.
+The API now provides a role-scoped order history endpoint and the client hydrates it whenever the cutting supervisor view is opened. Verification validation rejects duplicate IDs, non-integer counts, missing components, and shortages on approval. The sewing queue response includes immutable verification items and audit information so the assembly view can inspect the handoff. Demo identities now receive signed, expiring bearer tokens from the login endpoint instead of sending an untrusted role header.
 
 ## 4. Defensive architecture
 
-RBAC is enforced in Express middleware rather than relying on hidden client controls. The approval hard stop is re-evaluated on the server from recipe components and the persisted order quantity. The queue query contains an explicit `status = 'VERIFIED'` predicate, and sewing start uses a conditional `VERIFIED` update. Pure workflow rules and the queue predicate are covered by the server's Node test suite.
+RBAC is enforced in Express middleware rather than relying on hidden client controls. The approval hard stop is re-evaluated on the server from recipe components and the persisted order quantity. The queue query contains an explicit `status = 'VERIFIED'` predicate, and sewing start uses a conditional `VERIFIED` update. Supabase client roles are denied update/delete access to verification records, making the audit trail insert-only for the publishable database roles. Pure workflow rules and the queue predicate are covered by the server's Node test suite.

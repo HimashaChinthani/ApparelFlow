@@ -8,7 +8,7 @@ const {
     hasRejectionReason,
     getSewingQueue
 } = require("../src/services/verificationService");
-const { requireRole } = require("../src/middleware/demoAuth");
+const { requireRole, createDemoToken } = require("../src/middleware/demoAuth");
 
 const order = {
     target_qty: 10,
@@ -54,6 +54,13 @@ test("non-verifier roles are denied by the role guard", () => {
     );
     assert.equal(status, 403);
     assert.match(body.message, /cannot perform/i);
+});
+
+test("demo authentication issues signed tokens only for known roles", () => {
+    const token = createDemoToken("cutting_verifier");
+    assert.equal(typeof token, "string");
+    assert.equal(createDemoToken("unknown_role"), null);
+    assert.equal(token.split(".").length, 2);
 });
 
 test("the sewing queue query filters to verified orders", async () => {

@@ -1,4 +1,5 @@
 const express = require("express");
+const { attachDemoUser, requireRole } = require("../middleware/demoAuth");
 const {
     getRecipes,
     getRecipeById,
@@ -11,8 +12,8 @@ const router = express.Router();
 
 router.get("/", getRecipes);
 router.get("/:id", getRecipeById);
-router.post("/", createRecipe);
-router.put("/:id", updateRecipe);
-router.delete("/:id", deleteRecipe);
+router.post("/", attachDemoUser, requireRole("cutting_supervisor"), createRecipe);
+router.put("/:id", attachDemoUser, requireRole("cutting_supervisor"), updateRecipe);
+router.delete("/:id", attachDemoUser, requireRole("cutting_supervisor"), deleteRecipe);
 
 module.exports = router;

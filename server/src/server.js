@@ -7,12 +7,14 @@ const recipeRoutes = require("./routes/recipeRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const verificationRoutes = require("./routes/verificationRoutes");
 const sewingRoutes = require("./routes/sewingRoutes");
+const { login } = require("./middleware/demoAuth");
 
 const app = express();
 
 const allowedOrigins = process.env.CLIENT_URL ? process.env.CLIENT_URL.split(",").map((origin) => origin.trim()) : true;
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
+app.post("/api/auth/login", login);
 
 app.use("/api/recipes", recipeRoutes);
 app.use("/api/orders", orderRoutes);
@@ -62,4 +64,3 @@ app.get("/api/test-supabase", async (req, res) => {
 });
 
 module.exports = app;
-

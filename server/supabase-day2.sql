@@ -98,8 +98,9 @@ where not exists (
 -- Replace these policies with authenticated, role-aware policies before production.
 grant usage on schema public to anon, authenticated;
 grant select on public.recipes, public.recipe_components to anon, authenticated;
-grant select, insert, update on public.cutting_orders, public.verification_items, public.verification_logs to anon, authenticated;
-grant select on public.users to anon, authenticated;
+grant select, insert on public.cutting_orders to anon, authenticated;
+grant select, insert on public.verification_items, public.verification_logs to anon, authenticated;
+revoke update, delete on public.cutting_orders, public.verification_items, public.verification_logs from anon, authenticated;
 grant usage, select on all sequences in schema public to anon, authenticated;
 
 alter table public.recipes enable row level security;
@@ -123,11 +124,15 @@ create policy "demo read users" on public.users
 
 drop policy if exists "demo read and create orders" on public.cutting_orders;
 create policy "demo read and create orders" on public.cutting_orders
-    for all to anon, authenticated using (true) with check (true);
+    for select to anon, authenticated using (true);
+
+drop policy if exists "demo insert orders" on public.cutting_orders;
+create policy "demo insert orders" on public.cutting_orders
+    for insert to anon, authenticated with check (true);
 
 drop policy if exists "demo verification access" on public.verification_items;
 create policy "demo verification access" on public.verification_items
-    for all to anon, authenticated using (true) with check (true);
+    for select to anon, authenticated using (true);
 
 drop policy if exists "demo insert verification items" on public.verification_items;
 create policy "demo insert verification items" on public.verification_items
