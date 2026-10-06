@@ -9,6 +9,18 @@ const roles = [
 const emptyForm = { recipe_id: '', target_qty: '', fabric_roll_id: '', actual_fabric_yds: '' }
 const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 const apiUrl = (path) => `${API_URL}${path}`
+async function readApiResponse(response) {
+  const body = await response.text()
+  let data
+  try {
+    data = body ? JSON.parse(body) : {}
+  } catch {
+    throw new Error(response.status === 404
+      ? 'API endpoint not found. Start the server on port 5000 or set VITE_API_URL.'
+      : `API returned a non-JSON response (HTTP ${response.status}). Check that the backend is running.`)
+  }
+  return { response, data }
+}
 
 function App() {
   const [activeRole, setActiveRole] = useState(roles[0].value)
@@ -36,8 +48,7 @@ function App() {
   const selectedComponents = selectedOrder?.recipes?.recipe_components || []
 
   useEffect(() => {
-    fetch(apiUrl('/api/recipes')).then(async (response) => {
-      const data = await response.json()
+    fetch(apiUrl('/api/recipes')).then(readApiResponse).then(({ response, data }) => {
       if (!response.ok) throw new Error(data.message || 'Could not load recipes')
       return data
     }).then(setRecipes).catch((error) => setMessage({ type: 'error', text: error.message || 'Could not load recipes. Complete the database setup first.' }))
@@ -53,7 +64,7 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role: loginRole, password: loginPassword }),
       })
-      const data = await response.json()
+      const { data } = await readApiResponse(response)
       if (!response.ok) throw new Error(data.message || 'Authentication failed')
       setActiveRole(loginRole)
       setAuthToken(data.token)
@@ -70,27 +81,23 @@ function App() {
     if (!authToken || authenticatedRole !== activeRole) return
     const authHeaders = { Authorization: `Bearer ${authToken}` }
     if (activeRole === 'cutting_supervisor') {
-      fetch(apiUrl('/api/orders'), { headers: authHeaders }).then(async (response) => {
-        const data = await response.json()
+      fetch(apiUrl('/api/orders'), { headers: authHeaders }).then(readApiResponse).then(({ response, data }) => {
         if (!response.ok) throw new Error(data.message || 'Could not load cutting orders')
         return data
       }).then(setOrders).catch((error) => setMessage({ type: 'error', text: error.message }))
     }
     if (activeRole === 'cutting_verifier') {
-      fetch(apiUrl('/api/verification/pending'), { headers: authHeaders }).then(async (response) => {
-        const data = await response.json()
+      fetch(apiUrl('/api/verification/pending'), { headers: authHeaders }).then(readApiResponse).then(({ response, data }) => {
         if (!response.ok) throw new Error(data.message || 'Could not load pending batches')
         return data
       }).then((data) => { setPending(data); setSelectedPendingId(data[0]?.id || '') }).catch((error) => setMessage({ type: 'error', text: error.message }))
     }
     if (activeRole === 'sewing_supervisor') {
-      fetch(apiUrl('/api/sewing/queue'), { headers: authHeaders }).then(async (response) => {
-        const data = await response.json()
+      fetch(apiUrl('/api/sewing/queue'), { headers: authHeaders }).then(readApiResponse).then(({ response, data }) => {
         if (!response.ok) throw new Error(data.message || 'Could not load sewing queue')
         return data
       }).then(setQueue).catch((error) => setMessage({ type: 'error', text: error.message }))
-      fetch(apiUrl('/api/sewing/active'), { headers: authHeaders }).then(async (response) => {
-        const data = await response.json()
+      fetch(apiUrl('/api/sewing/active'), { headers: authHeaders }).then(readApiResponse).then(({ response, data }) => {
         if (!response.ok) throw new Error(data.message || 'Could not load active sewing batches')
         return data
       }).then(setActiveSewing).catch((error) => setMessage({ type: 'error', text: error.message }))
@@ -149,7 +156,7 @@ function App() {
     setIsSaving(true)
     try {
       const response = await fetch(apiUrl('/api/orders'), { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ ...form, target_qty: targetQty, actual_fabric_yds: Number(form.actual_fabric_yds) }) })
-      const data = await response.json()
+      const { data } = await readApiResponse(response)
       if (!response.ok) throw new Error(data.message || 'Order could not be created')
       setOrders((current) => [data, ...current])
       setForm(emptyForm)
@@ -175,7 +182,7 @@ function App() {
     setIsSaving(true)
     try {
       const response = await fetch(apiUrl(`/api/verification/${selectedOrder.id}/decision`), { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` }, body: JSON.stringify({ decision, rejection_note: rejectionNote, items }) })
-      const data = await response.json()
+      const { data } = await readApiResponse(response)
       if (!response.ok) throw new Error(data.message || 'Verification could not be recorded')
       const remainingOrders = pending.filter((order) => order.id !== selectedOrder.id)
       setPending(remainingOrders)
@@ -190,11 +197,11 @@ function App() {
     setIsSaving(true)
     try {
       const response = await fetch(apiUrl(`/api/sewing/${order.id}/start`), { method: 'POST', headers: { Authorization: `Bearer ${authToken}` } })
-      const data = await response.json()
+      const { data } = await readApiResponse(response)
       if (!response.ok) throw new Error(data.message || 'Could not start sewing')
       setQueue((current) => current.filter((item) => item.id !== order.id))
       const activeResponse = await fetch(apiUrl('/api/sewing/active'), { headers: { Authorization: `Bearer ${authToken}` } })
-      const activeData = await activeResponse.json()
+      const { data: activeData } = await readApiResponse(activeResponse)
       if (!activeResponse.ok) throw new Error(activeData.message || 'Could not load active sewing batches')
       setActiveSewing(activeData)
       setMessage({ type: 'success', text: `${order.order_no} released to sewing assembly.` })
