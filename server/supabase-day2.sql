@@ -32,14 +32,23 @@ create table if not exists cutting_orders (
 alter table public.cutting_orders
     add column if not exists expected_fabric_yds numeric(10, 2);
 
+alter table public.cutting_orders
+    add column if not exists updated_at timestamptz not null default now();
+
+-- Older installations used an order_status enum that does not contain the
+-- sewing state. Normalize it to text before applying the current state check.
 alter table public.cutting_orders drop constraint if exists cutting_orders_status_check;
+alter table public.cutting_orders alter column status drop default;
+alter table public.cutting_orders alter column status type text using status::text;
+alter table public.cutting_orders alter column status set default 'PENDING_VERIFICATION';
 alter table public.cutting_orders add constraint cutting_orders_status_check
     check (status in ('CUTTING_IN_PROGRESS', 'PENDING_VERIFICATION', 'REJECTED', 'VERIFIED', 'SEWING_IN_PROGRESS'));
 
 create table if not exists verification_items (
     id uuid primary key default gen_random_uuid(), order_id uuid not null references cutting_orders(id) on delete cascade,
     component_id uuid not null references recipe_components(id), expected_qty integer not null,
-    actual_qty integer not null, status text not null check (status in ('GREEN', 'YELLOW', 'RED')), created_at timestamptz not null default now()
+    actual_qty integer not null, status text not null check (status in ('GREEN', 'YELLOW', 'RED')), created_at timestamptz not null default now(),
+    unique (order_id, component_id)
 );
 
 create table if not exists verification_logs (
@@ -48,8 +57,12 @@ create table if not exists verification_logs (
     rejection_note text, wastage_pct numeric(10, 2) not null, created_at timestamptz not null default now()
 );
 
+-- Keep existing installations compatible with the audit query after schema updates.
+alter table public.verification_logs
+    add column if not exists created_at timestamptz not null default now();
+
 insert into users (id, email, password_hash, role, full_name)
-select seed.id, seed.email, seed.password_hash, seed.role::user_role, seed.full_name
+select seed.id, seed.email, seed.password_hash, seed.role, seed.full_name
 from (values
     ('00000000-0000-0000-0000-000000000001'::uuid, 'maya@apparelflow.demo', 'demo', 'cutting_supervisor', 'Maya Fernando'),
     ('00000000-0000-0000-0000-000000000002'::uuid, 'nadia@apparelflow.demo', 'demo', 'cutting_verifier', 'Nadia Perera'),

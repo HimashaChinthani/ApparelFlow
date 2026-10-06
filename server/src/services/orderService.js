@@ -1,5 +1,17 @@
 const supabase = require("../config/supabase");
 
+const getOrders = async (createdBy) => {
+    let query = supabase
+        .from("cutting_orders")
+        .select("id, order_no, target_qty, fabric_roll_id, actual_fabric_yds, expected_fabric_yds, status, created_at, updated_at, recipes(recipe_code, name), verification_items(expected_qty, actual_qty, status)")
+        .order("created_at", { ascending: false });
+
+    if (createdBy) query = query.eq("created_by", createdBy);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    return data;
+};
+
 const createOrder = async ({ recipeId, targetQty, fabricRollId, actualFabricYds, createdBy }) => {
     const { data: recipe, error: recipeError } = await supabase
         .from("recipes")
@@ -29,4 +41,4 @@ const createOrder = async ({ recipeId, targetQty, fabricRollId, actualFabricYds,
     return { ...order, component_counts: componentCounts };
 };
 
-module.exports = { createOrder };
+module.exports = { getOrders, createOrder };

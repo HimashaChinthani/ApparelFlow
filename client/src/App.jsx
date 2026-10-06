@@ -30,15 +30,34 @@ function App() {
   const selectedComponents = selectedOrder?.recipes?.recipe_components || []
 
   useEffect(() => {
-    fetch(apiUrl('/api/recipes')).then((response) => response.json()).then(setRecipes).catch(() => setMessage({ type: 'error', text: 'Could not load recipes. Complete the database setup first.' }))
+    fetch(apiUrl('/api/recipes')).then(async (response) => {
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.message || 'Could not load recipes')
+      return data
+    }).then(setRecipes).catch((error) => setMessage({ type: 'error', text: error.message || 'Could not load recipes. Complete the database setup first.' }))
   }, [])
 
   useEffect(() => {
+    if (activeRole === 'cutting_supervisor') {
+      fetch(apiUrl('/api/orders'), { headers: { 'x-demo-role': activeRole } }).then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.message || 'Could not load cutting orders')
+        return data
+      }).then(setOrders).catch((error) => setMessage({ type: 'error', text: error.message }))
+    }
     if (activeRole === 'cutting_verifier') {
-      fetch(apiUrl('/api/verification/pending'), { headers: { 'x-demo-role': activeRole } }).then((response) => response.json()).then((data) => { setPending(data); setSelectedPendingId(data[0]?.id || '') }).catch((error) => setMessage({ type: 'error', text: error.message }))
+      fetch(apiUrl('/api/verification/pending'), { headers: { 'x-demo-role': activeRole } }).then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.message || 'Could not load pending batches')
+        return data
+      }).then((data) => { setPending(data); setSelectedPendingId(data[0]?.id || '') }).catch((error) => setMessage({ type: 'error', text: error.message }))
     }
     if (activeRole === 'sewing_supervisor') {
-      fetch(apiUrl('/api/sewing/queue'), { headers: { 'x-demo-role': activeRole } }).then((response) => response.json()).then(setQueue).catch((error) => setMessage({ type: 'error', text: error.message }))
+      fetch(apiUrl('/api/sewing/queue'), { headers: { 'x-demo-role': activeRole } }).then(async (response) => {
+        const data = await response.json()
+        if (!response.ok) throw new Error(data.message || 'Could not load sewing queue')
+        return data
+      }).then(setQueue).catch((error) => setMessage({ type: 'error', text: error.message }))
     }
   }, [activeRole])
 
@@ -114,9 +133,9 @@ function App() {
 
       {activeRole === 'cutting_verifier' && <section className="panel verifier-panel"><div className="panel-heading"><div><p className="eyebrow">Quality checkpoint</p><h2>{selectedOrder ? selectedOrder.order_no : 'No pending batches'}</h2></div>{selectedOrder && <span className="order-count">{pending.length} pending · {selectedOrder.recipes.name}</span>}</div>{selectedOrder ? <><div className="pending-orders"><span className="pending-label">Pending batches</span>{pending.map((order) => <button className={order.id === selectedOrder.id ? 'pending-order active' : 'pending-order'} key={order.id} onClick={() => { setSelectedPendingId(order.id); setCounts({}); setRejectionNote('') }}><strong>{order.order_no}</strong><span>{order.recipes.name} · {order.target_qty} garments</span></button>)}</div><div className="verification-list">{selectedComponents.map((component) => <div className={`verification-row ${itemStatus(component).toLowerCase()}`} key={component.id}><div><strong>{component.component_name}</strong><span>Expected {Number(component.pieces_per_garment) * Number(selectedOrder.target_qty)} pieces</span></div><input aria-label={`Actual ${component.component_name}`} type="number" min="0" step="1" value={counts[component.id] ?? ''} onChange={(event) => updateCount(component.id, event.target.value)} placeholder="Actual count" /><b>{itemStatus(component)}</b></div>)}</div><label className="rejection-field">Rejection note <span className="label-note">required only when rejecting</span><textarea value={rejectionNote} onChange={(event) => setRejectionNote(event.target.value)} placeholder="Describe any shortage or defect..." /></label><div className="decision-actions"><button className="secondary-button reject" disabled={isSaving} onClick={() => submitDecision('REJECTED')}>Reject batch</button><button className="primary-button" disabled={isSaving || selectedComponents.some((component) => itemStatus(component) === 'RED' || itemStatus(component) === 'UNCHECKED')} onClick={() => submitDecision('APPROVED')}>Approve batch →</button></div></> : <div className="empty-state light"><span className="empty-icon">✓</span><p>All cutting batches have been reviewed.</p></div>}</section>}
 
-      {activeRole === 'sewing_supervisor' && <section className="panel queue-panel"><div className="panel-heading"><div><p className="eyebrow">Assembly release</p><h2>Verified sewing queue</h2></div><span className="order-count">{queue.length} ready</span></div>{queue.length ? <div className="queue-list">{queue.map((order) => <div className="queue-row" key={order.id}><div><strong>{order.order_no}</strong><span>{order.recipes?.name} · {order.target_qty} garments</span><small>Roll {order.fabric_roll_id} · {Number(order.actual_fabric_yds).toFixed(2)} yds used</small></div><button className="primary-button compact" disabled={isSaving} onClick={() => startSewing(order)}>Start sewing →</button></div>)}</div> : <div className="empty-state light"><span className="empty-icon">—</span><p>No verified batches are waiting for assembly.</p></div>}</section>}
+      {activeRole === 'sewing_supervisor' && <section className="panel queue-panel"><div className="panel-heading"><div><p className="eyebrow">Assembly release</p><h2>Verified sewing queue</h2></div><span className="order-count">{queue.length} ready</span></div>{queue.length ? <div className="queue-list">{queue.map((order) => { const audit = order.verification_logs?.[0]; return <div className="queue-row" key={order.id}><div><strong>{order.order_no}</strong><span>{order.recipes?.name} · {order.target_qty} garments</span><small>Roll {order.fabric_roll_id} · {Number(order.actual_fabric_yds).toFixed(2)} yds used · Wastage {Number(audit?.wastage_pct || 0).toFixed(2)}%</small><small>{order.verification_items?.length || 0} component counts verified by {audit?.verifier_id || 'assigned verifier'}</small></div><button className="primary-button compact" disabled={isSaving} onClick={() => startSewing(order)}>Start sewing →</button></div> })}</div> : <div className="empty-state light"><span className="empty-icon">—</span><p>No verified batches are waiting for assembly.</p></div>}</section>}
 
-      {orders.length > 0 && activeRole === 'cutting_supervisor' && <section className="panel recent-orders"><div className="panel-heading"><div><p className="eyebrow">This session</p><h2>Created orders</h2></div><span className="order-count">{orders.length} batch{orders.length === 1 ? '' : 'es'}</span></div><div className="order-table">{orders.map((order) => <div className="order-row" key={order.id}><span className="order-id">{order.order_no}</span><span>{order.recipes?.name || 'Production batch'}</span><span>{order.target_qty} garments</span><span>{order.status.replaceAll('_', ' ')}</span><b>{order.component_counts?.reduce((total, item) => total + item.expected_qty, 0)} pieces</b></div>)}</div></section>}
+      {orders.length > 0 && activeRole === 'cutting_supervisor' && <section className="panel recent-orders"><div className="panel-heading"><div><p className="eyebrow">Persistent production history</p><h2>Created orders</h2></div><span className="order-count">{orders.length} batch{orders.length === 1 ? '' : 'es'}</span></div><div className="order-table">{orders.map((order) => <div className="order-row" key={order.id}><span className="order-id">{order.order_no}</span><span>{order.recipes?.name || 'Production batch'}</span><span>{order.target_qty} garments</span><span>{order.status.replaceAll('_', ' ')}</span><b>{order.verification_items?.length ? `${order.verification_items.reduce((total, item) => total + item.expected_qty, 0)} pieces` : `${Number(order.expected_fabric_yds).toFixed(2)} yds expected`}</b></div>)}</div></section>}
       <footer><span>APPARELFLOW CONTROL PLANE</span><span>SERVER-VALIDATED WORKFLOW</span></footer>
     </main>
   )

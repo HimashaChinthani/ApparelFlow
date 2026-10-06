@@ -1,5 +1,14 @@
 const orderService = require("../services/orderService");
 
+const getOrders = async (req, res) => {
+    try {
+        res.json(await orderService.getOrders(req.user.id));
+    } catch (error) {
+        console.error("Get cutting orders error:", error);
+        res.status(error.status || 500).json({ message: error.message });
+    }
+};
+
 const createOrder = async (req, res) => {
     const { recipe_id, target_qty, fabric_roll_id, actual_fabric_yds } = req.body;
     const targetQty = Number(target_qty);
@@ -21,4 +30,4 @@ const createOrder = async (req, res) => {
     }
 };
 
-module.exports = { createOrder };
+module.exports = { getOrders, createOrder };
