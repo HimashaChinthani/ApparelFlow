@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 
 const recipeRoutes = require("./routes/recipeRoutes");
+const orderRoutes = require("./routes/orderRoutes");
 
 const app = express();
 
@@ -11,6 +12,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use("/api/recipes", recipeRoutes);
+app.use("/api/orders", orderRoutes);
 
 app.get("/", (req, res) => {
     res.json({
@@ -51,3 +53,4 @@ app.get("/api/test-supabase", async (req, res) => {
         });
     }
 });
+
