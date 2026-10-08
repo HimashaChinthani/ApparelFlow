@@ -79,7 +79,18 @@ const recordDecision = async ({ orderId, verifierId, decision, rejectionNote, it
 
     const nextStatus = decision === "APPROVED" ? "VERIFIED" : "REJECTED";
     const wastagePct = ((Number(order.actual_fabric_yds) - Number(order.expected_fabric_yds)) / Number(order.expected_fabric_yds)) * 100;
-    const { error: itemsError } = await supabase.from("verification_items").insert(validatedItems.map((item) => ({ order_id: orderId, component_id: item.component_id, expected_qty: item.expected_qty, actual_qty: item.actual_qty, status: item.status })));
+    const { error: itemsError } = await supabase
+        .from("verification_items")
+        .upsert(
+            validatedItems.map((item) => ({
+                order_id: orderId,
+                component_id: item.component_id,
+                expected_qty: item.expected_qty,
+                actual_qty: item.actual_qty,
+                status: item.status
+            })),
+            { onConflict: "order_id,component_id" }
+        );
     if (itemsError) throw new Error(itemsError.message);
     const { error: updateError } = await supabase.from("cutting_orders").update({ status: nextStatus, updated_at: new Date().toISOString() }).eq("id", orderId).eq("status", "PENDING_VERIFICATION");
     if (updateError) throw new Error(updateError.message);
