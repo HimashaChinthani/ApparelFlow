@@ -55,6 +55,15 @@ const validateItems = (order, items) => {
 
 const canApprove = (items) => items.length > 0 && items.every((item) => item.status !== "RED");
 const hasRejectionReason = (note) => typeof note === "string" && note.trim().length > 0;
+const validateDecision = ({ decision, rejectionNote, items }) => {
+    if (decision === "APPROVED" && !canApprove(items)) {
+        throw Object.assign(new Error("Approval blocked: one or more components have a shortage"), { status: 422 });
+    }
+    if (decision === "REJECTED" && !hasRejectionReason(rejectionNote)) {
+        throw Object.assign(new Error("A rejection reason is required"), { status: 400 });
+    }
+    return true;
+};
 
 const recordDecision = async ({ orderId, verifierId, decision, rejectionNote, items }) => {
     const { data: order, error: orderError } = await supabase
@@ -66,12 +75,7 @@ const recordDecision = async ({ orderId, verifierId, decision, rejectionNote, it
     if (orderError || !order) throw Object.assign(new Error("Pending cutting order not found"), { status: 404 });
 
     const validatedItems = validateItems(order, items);
-    if (decision === "APPROVED" && !canApprove(validatedItems)) {
-        throw Object.assign(new Error("Approval blocked: one or more components have a shortage"), { status: 422 });
-    }
-    if (decision === "REJECTED" && !hasRejectionReason(rejectionNote)) {
-        throw Object.assign(new Error("A rejection reason is required"), { status: 400 });
-    }
+    validateDecision({ decision, rejectionNote, items: validatedItems });
 
     const nextStatus = decision === "APPROVED" ? "VERIFIED" : "REJECTED";
     const wastagePct = ((Number(order.actual_fabric_yds) - Number(order.expected_fabric_yds)) / Number(order.expected_fabric_yds)) * 100;
@@ -112,4 +116,4 @@ const startSewing = async (orderId) => {
     return data;
 };
 
-module.exports = { getPendingOrders, getSewingQueue, getActiveSewing, recordDecision, startSewing, validateItems, canApprove, hasRejectionReason };
+module.exports = { getPendingOrders, getSewingQueue, getActiveSewing, recordDecision, startSewing, validateItems, canApprove, hasRejectionReason, validateDecision };

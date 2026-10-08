@@ -6,9 +6,10 @@ const {
     validateItems,
     canApprove,
     hasRejectionReason,
-    getSewingQueue
+    getSewingQueue,
+    validateDecision
 } = require("../src/services/verificationService");
-const { requireRole, createDemoToken } = require("../src/middleware/demoAuth");
+const { requireRole, createDemoToken, attachDemoUser } = require("../src/middleware/demoAuth");
 
 const order = {
     target_qty: 10,
@@ -20,28 +21,36 @@ const order = {
     }
 };
 
-test("all green components can be approved", () => {
+test("an authenticated verifier can approve an order with all GREEN components", () => {
+    const token = createDemoToken("cutting_verifier");
+    const request = {
+        header: () => `Bearer ${token}`
+    };
+    attachDemoUser(request, {}, () => {});
     const items = validateItems(order, [
         { component_id: "front", actual_qty: 10 },
         { component_id: "cuffs", actual_qty: 20 }
     ]);
     assert.ok(items.every((item) => item.status === "GREEN"));
-    assert.equal(canApprove(items), true);
+    assert.equal(request.user.role, "cutting_verifier");
+    assert.equal(validateDecision({ decision: "APPROVED", items }), true);
 });
 
-test("a shortage blocks approval", () => {
+test("an order with a RED shortage component returns an approval error", () => {
     const items = validateItems(order, [
         { component_id: "front", actual_qty: 9 },
         { component_id: "cuffs", actual_qty: 20 }
     ]);
     assert.equal(items[0].status, "RED");
     assert.equal(canApprove(items), false);
+    assert.throws(() => validateDecision({ decision: "APPROVED", items }), (error) => error.status === 422);
 });
 
-test("rejection requires a non-empty reason", () => {
+test("backend rejects a rejection without a reason note", () => {
     assert.equal(hasRejectionReason(""), false);
     assert.equal(hasRejectionReason("   "), false);
     assert.equal(hasRejectionReason("Missing sleeve"), true);
+    assert.throws(() => validateDecision({ decision: "REJECTED", rejectionNote: "", items: [] }), (error) => error.status === 400);
 });
 
 test("non-verifier roles are denied by the role guard", () => {

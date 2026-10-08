@@ -1,9 +1,9 @@
 const crypto = require("node:crypto");
 
 const DEMO_USERS = {
-    cutting_supervisor: { id: "00000000-0000-0000-0000-000000000001", role: "cutting_supervisor", full_name: "Maya Fernando" },
-    cutting_verifier: { id: "00000000-0000-0000-0000-000000000002", role: "cutting_verifier", full_name: "Nadia Perera" },
-    sewing_supervisor: { id: "00000000-0000-0000-0000-000000000003", role: "sewing_supervisor", full_name: "Ravi Silva" }
+    cutting_supervisor: { id: "00000000-0000-0000-0000-000000000001", role: "cutting_supervisor", full_name: "Maya Fernando", password_hash: "demo" },
+    cutting_verifier: { id: "00000000-0000-0000-0000-000000000002", role: "cutting_verifier", full_name: "Nadia Perera", password_hash: "demo" },
+    sewing_supervisor: { id: "00000000-0000-0000-0000-000000000003", role: "sewing_supervisor", full_name: "Ravi Silva", password_hash: "demo" }
 };
 
 const TOKEN_SECRET = process.env.AUTH_SECRET || "apparelflow-development-secret";
@@ -13,7 +13,8 @@ const sign = (value) => crypto.createHmac("sha256", TOKEN_SECRET).update(value).
 const createDemoToken = (role) => {
     const user = DEMO_USERS[role];
     if (!user) return null;
-    const payload = encode({ ...user, exp: Date.now() + 8 * 60 * 60 * 1000 });
+    const { password_hash, ...publicUser } = user;
+    const payload = encode({ ...publicUser, exp: Date.now() + 8 * 60 * 60 * 1000 });
     return `${payload}.${sign(payload)}`;
 };
 
@@ -32,10 +33,11 @@ const verifyToken = (token) => {
 
 const login = (req, res) => {
     const { role, password } = req.body || {};
-    if (password !== "demo") return res.status(401).json({ message: "Invalid demo credentials" });
+    if (!DEMO_USERS[role] || password !== DEMO_USERS[role].password_hash) return res.status(401).json({ message: "Invalid demo credentials" });
     const token = createDemoToken(role);
     if (!token) return res.status(401).json({ message: "Unknown demo role" });
-    res.json({ token, user: DEMO_USERS[role] });
+    const { password_hash, ...publicUser } = DEMO_USERS[role];
+    res.json({ token, user: publicUser });
 };
 
 const attachDemoUser = (req, res, next) => {

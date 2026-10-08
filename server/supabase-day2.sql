@@ -1,5 +1,12 @@
 create extension if not exists pgcrypto;
 
+do $$
+begin
+    create type user_role as enum ('cutting_supervisor', 'cutting_verifier', 'sewing_supervisor');
+exception
+    when duplicate_object then null;
+end $$;
+
 create table if not exists users (
     id uuid primary key default gen_random_uuid(),
     email text not null unique,
@@ -8,6 +15,17 @@ create table if not exists users (
     full_name text not null,
     created_at timestamptz not null default now()
 );
+
+-- Add the credential column when upgrading an older users table.
+alter table public.users
+    add column if not exists password_hash text;
+
+update public.users
+set password_hash = 'demo'
+where password_hash is null;
+
+alter table public.users
+    alter column password_hash set not null;
 
 create table if not exists recipes (
     id uuid primary key default gen_random_uuid(), recipe_code text not null unique,
@@ -62,7 +80,7 @@ alter table public.verification_logs
     add column if not exists created_at timestamptz not null default now();
 
 insert into users (id, email, password_hash, role, full_name)
-select seed.id, seed.email, seed.password_hash, seed.role, seed.full_name
+select seed.id, seed.email, seed.password_hash, seed.role::user_role, seed.full_name
 from (values
     ('00000000-0000-0000-0000-000000000001'::uuid, 'maya@apparelflow.demo', 'demo', 'cutting_supervisor', 'Maya Fernando'),
     ('00000000-0000-0000-0000-000000000002'::uuid, 'nadia@apparelflow.demo', 'demo', 'cutting_verifier', 'Nadia Perera'),

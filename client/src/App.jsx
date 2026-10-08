@@ -129,7 +129,7 @@ function App() {
       <main className="app-shell">
         <header className="topbar">
           <div className="brand"><span className="brand-mark">AF</span><span>ApparelFlow <small>ERP / CUTTING OPERATIONS</small></span></div>
-          <span className="status-chip">Secure demo login</span>
+          <span className="status-chip">Secure login</span>
         </header>
         <section className="workspace-head">
           <div><p className="eyebrow">Production control</p><h1>Sign in to ApparelFlow</h1><p className="lede">Choose a factory role to access its protected workflow workspace.</p></div>
@@ -138,8 +138,8 @@ function App() {
         <form className="panel login-panel" onSubmit={signIn}>
           <div className="panel-heading"><div><p className="eyebrow">Demo credentials</p><h2>Authenticated access</h2></div><span className="step">RBAC SESSION</span></div>
           <label>Factory role<select value={loginRole} onChange={(event) => setLoginRole(event.target.value)}>{roles.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}</select></label>
-          <label>Demo password<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} placeholder="Enter demo" autoComplete="current-password" required /></label>
-          <p className="login-help">Demo password: <strong>demo</strong></p>
+          <label> password<input type="password" value={loginPassword} onChange={(event) => setLoginPassword(event.target.value)} placeholder="Enter demo" autoComplete="current-password" required /></label>
+          <p className="login-help">password: <strong>demo</strong></p>
           <button className="primary-button" type="submit" disabled={isLoggingIn}>{isLoggingIn ? 'Signing in...' : 'Sign in securely →'}</button>
         </form>
         <footer><span>APPARELFLOW CONTROL PLANE</span><span>SIGNED SESSION REQUIRED</span></footer>
